@@ -9,6 +9,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("library_dir", type=Path)
     ap.add_argument("--min-assets", type=int, default=500)
+    ap.add_argument("--min-size-mib", type=float, default=0)
     args = ap.parse_args()
 
     root = args.library_dir
@@ -48,7 +49,12 @@ def main() -> int:
         return 1
 
     total_bytes = sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
-    print(f"OK: {len(ids)} catalogued assets; {total_bytes / 1024 / 1024:.1f} MiB extracted")
+    total_mib = total_bytes / 1024 / 1024
+    if total_mib < args.min_size_mib:
+        print(f"ERROR: library is only {total_mib:.1f} MiB; expected at least {args.min_size_mib:.1f} MiB")
+        return 1
+
+    print(f"OK: {len(ids)} catalogued assets; {total_mib:.1f} MiB extracted")
     return 0
 
 
