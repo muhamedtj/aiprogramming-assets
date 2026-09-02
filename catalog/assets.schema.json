@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AIProgramming generated asset catalog",
+  "type": "object",
+  "required": ["library", "version", "assets"],
+  "properties": {
+    "library": {"type": "string"},
+    "version": {"type": "string"},
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["asset_id", "pack_id", "path", "format", "tags", "license"],
+        "properties": {
+          "asset_id": {"type": "string"},
+          "pack_id": {"type": "string"},
+          "path": {"type": "string"},
+          "format": {"type": "string"},
+          "tags": {"type": "array", "items": {"type": "string"}},
+          "license": {"type": "string"}
+        }
+      }
+    }
+  }
+}
