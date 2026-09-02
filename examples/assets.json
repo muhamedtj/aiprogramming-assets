@@ -1,0 +1,9 @@
+{
+  "library_version": "0.1",
+  "packs": [
+    "nature",
+    "characters",
+    "ui",
+    "interface-sounds"
+  ]
+}
