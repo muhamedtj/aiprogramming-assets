@@ -1,15 +1,25 @@
-name: Build AIProgramming Asset Library
+name: Build AIProgramming Asset Library 500MB+
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'catalog/autodiscovery.json'
+      - 'catalog/sources.json'
+      - 'scripts/build_library.py'
+      - 'scripts/build_library_large.py'
+      - 'scripts/verify_library.py'
+      - '.github/workflows/build-assets.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 120
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -19,33 +29,49 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Build library
+      - name: Build expanded library
         run: |
-          python scripts/build_library.py \
-            --output dist/aiprogramming-assets-v0.1 \
+          python scripts/build_library_large.py \
+            --output dist/aiprogramming-assets-v0.2 \
             --zip
 
-      - name: Verify library
+      - name: Verify real runtime payload
         run: |
           python scripts/verify_library.py \
-            dist/aiprogramming-assets-v0.1 \
-            --min-assets 500
+            dist/aiprogramming-assets-v0.2 \
+            --min-assets 5000 \
+            --min-size-mib 1000
 
-      - name: Sanity-check archive size
+      - name: Require final ZIP >= 500 MiB
         run: |
           python - <<'PY'
           from pathlib import Path
-          p = Path('dist/aiprogramming-assets-v0.1.zip')
-          mb = p.stat().st_size / 1024 / 1024
-          print(f'Archive size: {mb:.1f} MiB')
-          if mb < 25:
-              raise SystemExit('Archive is suspiciously small (<25 MiB); refusing to publish as a real library')
+          p = Path('dist/aiprogramming-assets-v0.2.zip')
+          mib = p.stat().st_size / 1024 / 1024
+          print(f'Final ZIP size: {mib:.1f} MiB')
+          if mib < 500:
+              raise SystemExit(f'ZIP is only {mib:.1f} MiB; required >= 500 MiB')
           PY
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aiprogramming-assets-v0.1
-          path: dist/aiprogramming-assets-v0.1.zip
+          name: aiprogramming-assets-v0.2
+          path: dist/aiprogramming-assets-v0.2.zip
           if-no-files-found: error
           retention-days: 30
+          compression-level: 0
+
+      - name: Publish or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="assets-v0.2"
+          FILE="dist/aiprogramming-assets-v0.2.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE#aiprogramming-assets-v0.2.zip" --clobber
+          else
+            gh release create "$TAG" "$FILE#aiprogramming-assets-v0.2.zip" \
+              --title "AIProgramming Assets v0.2" \
+              --notes "Curated CC0 runtime asset library for Godot/Web projects. Build is rejected unless the final ZIP is at least 500 MiB."
+          fi
