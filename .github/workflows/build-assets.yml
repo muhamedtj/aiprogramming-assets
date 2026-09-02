@@ -1,0 +1,51 @@
+name: Build AIProgramming Asset Library
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build library
+        run: |
+          python scripts/build_library.py \
+            --output dist/aiprogramming-assets-v0.1 \
+            --zip
+
+      - name: Verify library
+        run: |
+          python scripts/verify_library.py \
+            dist/aiprogramming-assets-v0.1 \
+            --min-assets 500
+
+      - name: Sanity-check archive size
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('dist/aiprogramming-assets-v0.1.zip')
+          mb = p.stat().st_size / 1024 / 1024
+          print(f'Archive size: {mb:.1f} MiB')
+          if mb < 25:
+              raise SystemExit('Archive is suspiciously small (<25 MiB); refusing to publish as a real library')
+          PY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiprogramming-assets-v0.1
+          path: dist/aiprogramming-assets-v0.1.zip
+          if-no-files-found: error
+          retention-days: 30
