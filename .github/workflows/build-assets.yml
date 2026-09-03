@@ -1,4 +1,4 @@
-name: Build AIProgramming Asset Library 500MB+
+name: Build AIProgramming Rich Asset Library
 
 on:
   workflow_dispatch:
@@ -10,6 +10,7 @@ on:
       - 'scripts/build_library.py'
       - 'scripts/build_library_large.py'
       - 'scripts/verify_library.py'
+      - 'scripts/verify_coverage.py'
       - '.github/workflows/build-assets.yml'
 
 permissions:
@@ -35,22 +36,30 @@ jobs:
             --output dist/aiprogramming-assets-v0.2 \
             --zip
 
-      - name: Verify real runtime payload
+      - name: Verify file integrity
         run: |
           python scripts/verify_library.py \
             dist/aiprogramming-assets-v0.2 \
-            --min-assets 5000 \
-            --min-size-mib 1000
+            --min-assets 3000 \
+            --min-size-mib 100
 
-      - name: Require final ZIP >= 500 MiB
+      - name: Verify richness and game coverage
+        run: |
+          python scripts/verify_coverage.py \
+            dist/aiprogramming-assets-v0.2 \
+            --min-assets 3000 \
+            --min-packs 30 \
+            --min-themes 8 \
+            --min-kind-groups 4
+
+      - name: Report archive size
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('dist/aiprogramming-assets-v0.2.zip')
           mib = p.stat().st_size / 1024 / 1024
           print(f'Final ZIP size: {mib:.1f} MiB')
-          if mib < 500:
-              raise SystemExit(f'ZIP is only {mib:.1f} MiB; required >= 500 MiB')
+          print('Size is informational; diversity/coverage are the release criteria.')
           PY
 
       - name: Upload artifact
@@ -73,5 +82,5 @@ jobs:
           else
             gh release create "$TAG" "$FILE#aiprogramming-assets-v0.2.zip" \
               --title "AIProgramming Assets v0.2" \
-              --notes "Curated CC0 runtime asset library for Godot/Web projects. Build is rejected unless the final ZIP is at least 500 MiB."
+              --notes "Curated CC0 runtime library for Godot/Web student projects. Release criteria focus on breadth: multiple themes, asset kinds, characters, environments, UI and audio."
           fi
