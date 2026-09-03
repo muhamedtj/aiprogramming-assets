@@ -1,0 +1,6 @@
+.godot/
+build/
+.aiprogramming-cache/
+assets/aiprogramming/
+.DS_Store
+Thumbs.db
