@@ -1,0 +1,71 @@
+name: Build and Deploy Godot Web
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Sync AIProgramming assets
+        env:
+          AIPROGRAMMING_ASSETS_TOKEN: ${{ secrets.AIPROGRAMMING_ASSETS_TOKEN }}
+        run: python tools/sync_assets.py
+
+      - name: Pull Godot CI image
+        run: docker pull barichello/godot-ci:4.7.2
+
+      - name: Import Godot project
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            barichello/godot-ci:4.7.2 \
+            godot --headless --editor --path /workspace --quit
+
+      - name: Export Web
+        run: |
+          mkdir -p build/web
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            barichello/godot-ci:4.7.2 \
+            godot --headless --path /workspace --export-release "Web" build/web/index.html
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: build/web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
