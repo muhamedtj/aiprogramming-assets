@@ -9,6 +9,7 @@ on:
       - 'catalog/sources.json'
       - 'scripts/build_library.py'
       - 'scripts/build_library_large.py'
+      - 'scripts/repair_catalog_ids.py'
       - 'scripts/verify_library.py'
       - 'scripts/verify_coverage.py'
       - '.github/workflows/build-assets.yml'
@@ -33,8 +34,12 @@ jobs:
       - name: Build expanded library
         run: |
           python scripts/build_library_large.py \
-            --output dist/aiprogramming-assets-v0.2 \
-            --zip
+            --output dist/aiprogramming-assets-v0.2
+
+      - name: Normalize unique asset IDs
+        run: |
+          python scripts/repair_catalog_ids.py \
+            dist/aiprogramming-assets-v0.2
 
       - name: Verify file integrity
         run: |
@@ -51,6 +56,18 @@ jobs:
             --min-packs 30 \
             --min-themes 8 \
             --min-kind-groups 4
+
+      - name: Create release archive
+        run: |
+          python - <<'PY'
+          import shutil
+          shutil.make_archive(
+              'dist/aiprogramming-assets-v0.2',
+              'zip',
+              root_dir='dist',
+              base_dir='aiprogramming-assets-v0.2',
+          )
+          PY
 
       - name: Report archive size
         run: |
