@@ -10,6 +10,7 @@ on:
       - 'scripts/build_library.py'
       - 'scripts/build_library_large.py'
       - 'scripts/repair_catalog_ids.py'
+      - 'scripts/package_release.py'
       - 'scripts/verify_library.py'
       - 'scripts/verify_coverage.py'
       - '.github/workflows/build-assets.yml'
@@ -57,7 +58,13 @@ jobs:
             --min-themes 8 \
             --min-kind-groups 4
 
-      - name: Create release archive
+      - name: Build downloadable pack release
+        run: |
+          python scripts/package_release.py \
+            dist/aiprogramming-assets-v0.2 \
+            --output dist/release-assets
+
+      - name: Create full backup archive
         run: |
           python - <<'PY'
           import shutil
@@ -69,21 +76,25 @@ jobs:
           )
           PY
 
-      - name: Report archive size
+      - name: Report library statistics
         run: |
           python - <<'PY'
+          import json
           from pathlib import Path
-          p = Path('dist/aiprogramming-assets-v0.2.zip')
-          mib = p.stat().st_size / 1024 / 1024
-          print(f'Final ZIP size: {mib:.1f} MiB')
-          print('Size is informational; diversity/coverage are the release criteria.')
+          full = Path('dist/aiprogramming-assets-v0.2.zip')
+          index = json.loads(Path('dist/release-assets/release-index.json').read_text())
+          print(f"Assets: {index['asset_count']}")
+          print(f"Downloadable packs: {index['pack_count']}")
+          print(f"Full backup ZIP: {full.stat().st_size / 1024 / 1024:.1f} MiB")
           PY
 
-      - name: Upload artifact
+      - name: Upload release bundle artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aiprogramming-assets-v0.2
-          path: dist/aiprogramming-assets-v0.2.zip
+          name: aiprogramming-assets-v0.2-release
+          path: |
+            dist/release-assets/
+            dist/aiprogramming-assets-v0.2.zip
           if-no-files-found: error
           retention-days: 30
           compression-level: 0
@@ -93,11 +104,22 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG="assets-v0.2"
-          FILE="dist/aiprogramming-assets-v0.2.zip"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$FILE#aiprogramming-assets-v0.2.zip" --clobber
-          else
-            gh release create "$TAG" "$FILE#aiprogramming-assets-v0.2.zip" \
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
               --title "AIProgramming Assets v0.2" \
-              --notes "Curated CC0 runtime library for Godot/Web student projects. Release criteria focus on breadth: multiple themes, asset kinds, characters, environments, UI and audio."
+              --notes "Curated CC0 runtime asset library for Godot/Web student projects. Use release-index.json to select only the packs needed by a project."
           fi
+
+          gh release upload "$TAG" \
+            "dist/release-assets/release-index.json" \
+            "dist/release-assets/catalog.generated.json" \
+            "dist/release-assets/PROVENANCE.json" \
+            "dist/aiprogramming-assets-v0.2.zip#aiprogramming-assets-v0.2-full.zip" \
+            --clobber
+
+          # Upload each runtime pack and its compact catalog independently.
+          find dist/release-assets -maxdepth 1 -type f \( -name '*.zip' -o -name '*.catalog.json' \) -print0 | \
+          while IFS= read -r -d '' file; do
+            echo "Uploading $(basename "$file")"
+            gh release upload "$TAG" "$file" --clobber
+          done
