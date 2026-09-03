@@ -1,0 +1,77 @@
+name: Build AIProgramming GameMaker Assets 500MB+
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'catalog/gamemaker.json'
+      - 'scripts/build_gamemaker_library.py'
+      - 'scripts/build_library.py'
+      - 'scripts/build_library_large.py'
+      - 'scripts/verify_library.py'
+      - '.github/workflows/build-gamemaker-assets.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build GameMaker 2D library
+        run: |
+          python scripts/build_gamemaker_library.py \
+            --output dist/aiprogramming-gamemaker-assets-v0.1 \
+            --zip
+
+      - name: Verify real runtime payload
+        run: |
+          python scripts/verify_library.py \
+            dist/aiprogramming-gamemaker-assets-v0.1 \
+            --min-assets 5000 \
+            --min-size-mib 650
+
+      - name: Require final ZIP >= 500 MiB
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('dist/aiprogramming-gamemaker-assets-v0.1.zip')
+          mib = p.stat().st_size / 1024 / 1024
+          print(f'Final GameMaker ZIP size: {mib:.1f} MiB')
+          if mib < 500:
+              raise SystemExit(f'ZIP is only {mib:.1f} MiB; required >= 500 MiB')
+          PY
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: aiprogramming-gamemaker-assets-v0.1
+          path: dist/aiprogramming-gamemaker-assets-v0.1.zip
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Publish or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="gamemaker-assets-v0.1"
+          FILE="dist/aiprogramming-gamemaker-assets-v0.1.zip"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$FILE#aiprogramming-gamemaker-assets-v0.1.zip" --clobber
+          else
+            gh release create "$TAG" "$FILE#aiprogramming-gamemaker-assets-v0.1.zip" \
+              --title "AIProgramming GameMaker Assets v0.1" \
+              --notes "Curated CC0 2D/UI/audio/texture runtime library for GameMaker projects. Build is rejected unless the final ZIP is at least 500 MiB."
+          fi
