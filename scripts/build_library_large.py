@@ -6,7 +6,9 @@ import html
 import json
 from pathlib import Path
 import re
+import shutil
 import sys
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -93,11 +95,42 @@ def discover_from_slug(slug: str, allowed: set[str]) -> dict | None:
             "fallback_url": download_url,
             "license": "CC0-1.0",
             "expected_items": 0,
-            "tags": [x for x in slug.split("-") if x]
+            "tags": [x for x in slug.split("-") if x],
         }
     except Exception as exc:
         print(f"skip unavailable pack {slug}: {exc}")
         return None
+
+
+def validate_runtime_pack(pack: dict, cache: Path) -> bool:
+    """Download once, cache it, and reject packs that cannot produce web runtime files."""
+    pid = pack["id"]
+    zip_path = cache / f"{pid}.zip"
+    try:
+        cache.mkdir(parents=True, exist_ok=True)
+        if not zip_path.exists() or not zipfile.is_zipfile(zip_path):
+            base.download_pack(pack, zip_path)
+        with zipfile.ZipFile(zip_path) as z:
+            keep = base.choose_extensions(z, pack)
+            runtime_count = 0
+            runtime_bytes = 0
+            for info in z.infolist():
+                if info.is_dir():
+                    continue
+                ext = Path(info.filename).suffix.lower()
+                if ext in keep:
+                    runtime_count += 1
+                    runtime_bytes += info.file_size
+            if runtime_count == 0:
+                raise RuntimeError("no usable runtime files")
+        print(
+            f"validated {pid}: {runtime_count} runtime files, "
+            f"{runtime_bytes / 1024 / 1024:.1f} MiB uncompressed"
+        )
+        return True
+    except Exception as exc:
+        print(f"skip incompatible pack {pid}: {exc}")
+        return False
 
 
 def main() -> int:
@@ -113,21 +146,31 @@ def main() -> int:
     existing_slugs = {p["source_page"].rstrip("/").split("/")[-1] for p in cfg["packs"]}
     existing_ids = {p["id"] for p in cfg["packs"]}
 
-    added = []
+    discovered: list[dict] = []
     for slug in auto.get("seed_slugs", []):
         if slug in existing_slugs or f"kenney-{slug}" in existing_ids:
             continue
         pack = discover_from_slug(slug, allowed)
         if pack:
-            added.append(pack)
+            discovered.append(pack)
 
-    print(f"\nAccepted {len(added)} additional CC0 packs")
+    print(f"\nDiscovered {len(discovered)} additional confirmed CC0 packs")
+
+    compatible: list[dict] = []
+    for pack in discovered:
+        if validate_runtime_pack(pack, args.cache):
+            compatible.append(pack)
+
+    print(f"\nAccepted {len(compatible)} additional web-runtime-compatible CC0 packs")
     expanded = dict(cfg)
     expanded["version"] = "0.2"
-    expanded["packs"] = cfg["packs"] + added
+    expanded["packs"] = cfg["packs"] + compatible
     temp = ROOT / ".cache" / "sources-expanded.json"
     temp.parent.mkdir(parents=True, exist_ok=True)
     temp.write_text(json.dumps(expanded, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    if args.output.exists():
+        shutil.rmtree(args.output)
 
     old_sources = base.SOURCES
     try:
@@ -137,8 +180,9 @@ def main() -> int:
         base.SOURCES = old_sources
 
     if args.make_zip:
-        import shutil
-        archive = shutil.make_archive(str(args.output), "zip", root_dir=args.output.parent, base_dir=args.output.name)
+        archive = shutil.make_archive(
+            str(args.output), "zip", root_dir=args.output.parent, base_dir=args.output.name
+        )
         print(f"ZIP: {archive}")
     return 0
 
